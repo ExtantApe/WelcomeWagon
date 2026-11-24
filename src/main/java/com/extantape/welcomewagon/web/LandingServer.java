@@ -156,7 +156,8 @@ public final class LandingServer {
                 case "/" -> { if (only(x, "GET")) home(x, null, ""); }
                 case "/invite" -> { if (only(x, "POST")) checkCode(x); }
                 case "/invite/confirm" -> { if (only(x, "POST")) redeem(x); }
-                case "/logo" -> { if (only(x, "GET")) logo(x); }
+                case "/logo" -> { if (only(x, "GET")) image(x, page.logo(), page.logoType()); }
+                case "/banner" -> { if (only(x, "GET")) image(x, page.banner(), page.bannerType()); }
                 case "/signin" -> {
                     if (method.equals("GET")) signInPage(x, null, "");
                     else if (only(x, "POST")) signIn(x);
@@ -188,14 +189,15 @@ public final class LandingServer {
         send(x, 200, Html.home(page, csrf.tokenFor(form), gate.allowed(Part.REDEMPTION), gate.allowed(Part.SIGNIN), msg, kind));
     }
 
-    private void logo(HttpExchange x) throws IOException {
-        if (page.logo() == null) { send(x, 404, Html.plain("Not found", "There's nothing here.")); return; }
+    /** The logo or the banner: an image checked at startup, or a 404 when none is set. */
+    private void image(HttpExchange x, byte[] bytes, String type) throws IOException {
+        if (bytes == null) { send(x, 404, Html.plain("Not found", "There's nothing here.")); return; }
         Headers h = x.getResponseHeaders();
         securityHeaders(h);
-        h.set("Content-Type", page.logoType());
+        h.set("Content-Type", type);
         h.set("Cache-Control", "public, max-age=3600");
-        x.sendResponseHeaders(200, page.logo().length);
-        x.getResponseBody().write(page.logo());
+        x.sendResponseHeaders(200, bytes.length);
+        x.getResponseBody().write(bytes);
     }
 
     private void signInPage(HttpExchange x, String msg, String kind) throws IOException {

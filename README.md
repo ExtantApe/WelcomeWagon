@@ -20,7 +20,8 @@ Invites, a landing page and browser sign-in for whitelisted Paper servers. A pla
 - It can have a host of its own, such as `https://join.example.org`, or live under a path, such as `https://example.org/join`. Under a path, WelcomeWagon answers only that path.
 - An invite link carries its code after a `#`, such as `https://join.example.org/#K3XP7Q`, so the code never reaches a web log. Opening the link fills the code in; the player still presses Continue.
 - One box: the invite code. A code that matches an open invite first shows "This invite is for <name>"; nothing is used up until the player chooses "Yes, that's me". Then they're on the whitelist and that browser is signed in.
-- A signed-in browser sees the welcome view: the server's logo and name, the address to join with a copy button, and a few first steps, all set under `page:` in `config.yml`. The address is only ever in that view, never in a page anyone can open, and the tests check every other answer for it.
+- A signed-in browser sees the welcome view: a greeting, then boxed sections for joining (the address with a copy button), the first steps and the map, with a quiet sign-out link at the bottom. On a phone the boxes stack. From 52rem wide, the first steps and the map sit side by side. All of it is set under `page:` in `config.yml`. The address is only ever in that view, never in a page anyone can open, and the tests check every other answer for it.
+- An optional banner, a wide picture across the top of the page. With a banner the server's name stays in the page for screen readers and is read as the picture's description. Without one, the page shows the logo and the name as before.
 - It works with a keyboard and a screen reader, without JavaScript (the copy button is the only script), and in light or dark mode.
 - It listens on 127.0.0.1 by default. Your tunnel or proxy provides the HTTPS.
 - Form tokens, refusal of posts from other sites, rate limits (per visitor and site-wide), a fixed Content-Security-Policy and security headers on every answer. No stack traces, and nothing personal in the log.
@@ -63,7 +64,7 @@ Download the jar from [Releases](https://github.com/ExtantApe/WelcomeWagon/relea
 2. In `plugins/WelcomeWagon/config.yml`, set `landing.public-url` to that address and `landing.enabled` to `true`. Then turn on what you want offered: `invites.enabled` for invite codes and `sessions.enabled` for browser sign-in.
 3. Run `/welcomewagon reload`, then `/welcomewagon status` to check every part is on.
 4. To let players use `/login`, grant `welcomewagon.signin`. It's op-only by default: `lp group default permission set welcomewagon.signin true`.
-5. Optional: set the page's `title`, `logo` (a PNG or WebP in `plugins/WelcomeWagon/`), `play-address` and `steps` under `page:`, then `/welcomewagon reload`.
+5. Optional: set the page's `title`, `logo` or `banner` (a PNG or WebP in `plugins/WelcomeWagon/`, at most 512 KB each), `play-address` and `steps` under `page:`, then `/welcomewagon reload`. A banner about three times as wide as tall works well; it's drawn at its natural ratio, up to 44rem wide. A banner that's too big, isn't a PNG or WebP, or can't be read is left out, and the console says what to change. Keep each step to a short line or two, since the page shows them in a box beside the map.
 
 ## Commands
 
