@@ -99,6 +99,20 @@ class LandingServerTest {
         server.start();
     }
 
+    /** As {@link #startWithPage} but with a banner too, and optionally without the steps or the map. */
+    void startWithBanner(boolean steps, boolean map) throws Exception {
+        if (server != null) server.stop();
+        var settings = new SafeSetup.Settings("127.0.0.1", 0, URI.create(ORIGIN), List.of("127.0.0.1"), 1000, 600,
+                Duration.ofDays(14), Duration.ofHours(24), Map.of());
+        var page = new PageSettings("Example Realm", PNG, "image/png", ADDRESS,
+                steps ? List.of(new PageSettings.Step("Accept the resource pack", "Choose Yes when asked.")) : List.of(), map ? MAP : "", List.of(), "", BANNER, "image/png");
+        handoffs = new Handoffs(now::get);
+        server = new LandingServer(settings, page, invites, sessions, links, gate, Logger.getLogger("test"), now::get, handoffs);
+        server.start();
+    }
+
+    static final byte[] BANNER = {(byte) 0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a, 9, 8, 7};
+
     static boolean mentionsAddress(HttpResponse<String> r) {
         return r.body().contains(ADDRESS) || r.body().contains("secret-address") || r.headers().map().toString().contains("secret-address");
     }
@@ -302,7 +316,7 @@ class LandingServerTest {
     }
 
     @Test void welcomewagonsOwnPathsCantBeForwarded() {
-        for (String own : List.of("/map", "/logo", "/invite", "/signin"))
+        for (String own : List.of("/map", "/logo", "/banner", "/invite", "/signin"))
             assertNotNull(com.extantape.welcomewagon.setup.SafeSetup.forwardProblemForTest(own, "http://127.0.0.1:8100"), own);
     }
 
@@ -337,7 +351,7 @@ class LandingServerTest {
         var r = b.redeem(code.toLowerCase());
         assertEquals(303, r.statusCode(), r.body());
         assertTrue(b.jar.containsKey(LandingServer.SESSION_COOKIE), "the browser is signed in");
-        assertTrue(b.get("/").body().contains("Welcome, <strong>Alex</strong>"));
+        assertTrue(b.get("/").body().contains("Welcome, Alex.<"));
         assertEquals(1, admitted.size());
         assertEquals(List.of("builders"), admitted.getFirst().profiles());
         assertEquals(400, new Browser().redeem(code).statusCode());
@@ -516,6 +530,67 @@ class LandingServerTest {
         assertEquals(404, new Browser().get("/logo").statusCode(), "no logo set, nothing served");
     }
 
+    @Test void aBannerSitsAboveThePageAndTheNameStaysForScreenReaders() throws Exception {
+        startWithBanner(true, true);
+        var b = new Browser();
+        String home = b.get("/").body();
+        assertTrue(home.contains("<img class=\"hero\" src=\"/banner\" alt=\"Example Realm\">"), "the banner's alt text is the name");
+        assertTrue(home.contains("<h1 class=\"vh\">Example Realm</h1>"), "the heading stays, hidden from view");
+        assertFalse(home.contains("class=\"logo\""), "one picture on the page, not two");
+        assertTrue(home.indexOf("class=\"hero\"") < home.indexOf("<main>"));
+        assertEquals(303, b.redeem(invite("Alex", Duration.ofDays(1))).statusCode());
+        String page = b.get("/").body();
+        assertTrue(page.contains("<img class=\"hero\" src=\"/banner\" alt=\"Example Realm\">"));
+        assertEquals(1, page.split("<h1", -1).length - 1, "one h1");
+        int h1 = page.indexOf("<h1"), j = page.indexOf("<h2 id=\"j\">"), f = page.indexOf("<h2 id=\"f\">"), m = page.indexOf("<h2 id=\"m\">"), out = page.indexOf("Sign out of this browser");
+        assertTrue(h1 < j && j < f && f < m && m < out, "reading order: name, join, first time in, map, sign-out");
+        assertTrue(page.contains("<section aria-labelledby=\"j\">") && page.contains("<section aria-labelledby=\"f\">") && page.contains("<section aria-labelledby=\"m\">"));
+        assertTrue(page.contains("<ol class=\"num\" role=\"list\">"));
+        assertTrue(page.contains("aria-label=\"Copy server address\" hidden>Copy</button>"));
+        assertTrue(page.contains("class=\"quiet\">Sign out of this browser</button>"));
+        assertFalse(page.contains("<div class=\"grid one\">"), "steps and map side by side on wide screens");
+        assertTrue(page.contains("<style>" + Html.CSS + "</style>") && Html.CSP.contains("'" + Html.sha256(Html.CSS) + "'"), "the stylesheet is the one the CSP allows");
+        assertTrue(Html.CSP.contains("default-src 'none'") && Html.CSP.contains("img-src 'self'"));
+        assertFalse(page.contains("http://") || page.contains("https://") && !page.contains("action=\"/"), "no outside requests in the page");
+    }
+
+    @Test void theBannerIsServedAsAnImageWithTheSecurityHeadersAndNeverCarriesTheAddress() throws Exception {
+        startWithBanner(true, true);
+        var r = http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + server.port() + "/banner")).build(), HttpResponse.BodyHandlers.ofByteArray());
+        assertEquals(200, r.statusCode());
+        assertEquals("image/png", r.headers().firstValue("content-type").orElse(null));
+        assertEquals("nosniff", r.headers().firstValue("x-content-type-options").orElse(null));
+        assertArrayEquals(BANNER, r.body());
+        assertEquals(405, http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + server.port() + "/banner")).POST(HttpRequest.BodyPublishers.noBody()).build(), HttpResponse.BodyHandlers.ofString()).statusCode());
+        assertFalse(new String(r.body(), StandardCharsets.ISO_8859_1).contains("secret-address") || r.headers().map().toString().contains("secret-address"));
+        assertFalse(mentionsAddress(new Browser().get("/")), "the page anyone can open, with a banner, still has no address");
+        start(3, 60, Map.of());
+        assertEquals(404, new Browser().get("/banner").statusCode(), "no banner set, nothing served");
+        assertFalse(new Browser().get("/").body().contains("class=\"hero\""), "no banner, no picture");
+    }
+
+    @Test void withoutABannerThePageKeepsTheLogoAndAVisibleHeading() throws Exception {
+        startWithPage(1000);
+        var b = new Browser();
+        assertTrue(b.get("/").body().contains("<img class=\"logo\" src=\"/logo\" alt=\"Example Realm\"><h1 class=\"hint\">Example Realm</h1>"));
+        assertEquals(303, b.redeem(invite("Alex", Duration.ofDays(1))).statusCode());
+        String page = b.get("/").body();
+        assertFalse(page.contains("class=\"vh\"") || page.contains("class=\"hero\""));
+        assertTrue(page.contains("<h1 class=\"hint\">Example Realm</h1>"));
+    }
+
+    @Test void aLoneBoxInTheGridIsNotSqueezedIntoHalfAColumn() throws Exception {
+        startWithBanner(false, true);
+        var b = new Browser();
+        assertEquals(303, b.redeem(invite("Alex", Duration.ofDays(1))).statusCode());
+        String page = b.get("/").body();
+        assertTrue(page.contains("<div class=\"grid one\"><section aria-labelledby=\"m\">") && !page.contains("<h2 id=\"f\">"));
+        startWithBanner(false, false);
+        var c = new Browser();
+        assertEquals(303, c.redeem(invite("Bo", Duration.ofDays(1))).statusCode());
+        assertFalse(c.get("/").body().contains("class=\"grid"), "no steps and no map: no empty grid");
+    }
+
     @Test void theConfirmStepUsesNothingUntilYes() throws Exception {
         startWithPage(1000);
         String code = invite("Alex", Duration.ofDays(1));
@@ -629,7 +704,7 @@ class LandingServerTest {
         String sc = r.headers().allValues("set-cookie").stream().filter(s -> s.startsWith("welcomewagon_session=")).findFirst().orElseThrow();
         assertTrue(sc.contains("HttpOnly") && sc.contains("Secure") && sc.contains("SameSite=Strict") && sc.contains("Path=/"), sc);
         assertTrue(sc.contains("Max-Age=86400"), sc);
-        assertTrue(b.get("/").body().contains("Welcome, <strong>Alex</strong>"));
+        assertTrue(b.get("/").body().contains("Welcome, Alex.<"));
         assertEquals(1, sessions.count(ALEX));
     }
 
@@ -690,16 +765,16 @@ class LandingServerTest {
         signInWith(b, links.issue(ALEX, "Alex", Instant.ofEpochMilli(now.get())));
         var thief = new Browser();
         thief.jar.put("welcomewagon_session", b.jar.get("welcomewagon_session"));
-        assertTrue(thief.get("/").body().contains("Welcome, <strong>"));
+        assertTrue(thief.get("/").body().contains("Welcome, "));
         b.post("/signout", Map.of("csrf", b.csrf("/")));
-        assertFalse(thief.get("/").body().contains("Welcome, <strong>"));
+        assertFalse(thief.get("/").body().contains("Welcome, "));
     }
 
     @Test void sessionsAreIgnoredWhileSignInIsStopped() throws Exception {
         var b = new Browser();
         signInWith(b, links.issue(ALEX, "Alex", Instant.ofEpochMilli(now.get())));
         off.add(SafeSetup.Part.SIGNIN);
-        assertFalse(b.get("/").body().contains("Welcome, <strong>"));
+        assertFalse(b.get("/").body().contains("Welcome, "));
         assertTrue(b.get("/signin").body().contains("Sign-in isn't open"));
     }
 
@@ -709,7 +784,7 @@ class LandingServerTest {
         String c = b.jar.get("welcomewagon_session");
         var r = http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + server.port() + "/"))
                 .header("Cookie", "welcomewagon_session=" + c + "; welcomewagon_session=" + c).build(), HttpResponse.BodyHandlers.ofString());
-        assertFalse(r.body().contains("Welcome, <strong>"));
+        assertFalse(r.body().contains("Welcome, "));
     }
 
     // --- forwarding ---
@@ -805,7 +880,7 @@ class LandingServerTest {
         assertEquals("/join/", done.headers().firstValue("location").orElse(null));
         assertTrue(done.headers().allValues("set-cookie").stream().anyMatch(c -> c.startsWith(LandingServer.SESSION_COOKIE + "=") && c.contains("Path=/join;")),
                 done.headers().allValues("set-cookie").toString());
-        assertTrue(b.get("/join/").body().contains("Welcome, <strong>Alex</strong>"));
+        assertTrue(b.get("/join/").body().contains("Welcome, Alex.<"));
         assertTrue(b.get("/join/").body().contains("action=\"/join/signout\""));
     }
 

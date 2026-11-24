@@ -1,5 +1,21 @@
 # Test audit
 
+## 2026-11-24, for 0.7.0 (boxed welcome layout and the banner)
+
+| Promise | Covered by |
+| --- | --- |
+| A banner is a real PNG or WebP from the plugin folder only, at most 512 KB; anything else is left out with a console line starting `page.banner` | `PageSettingsTest.aBannerFollowsTheSameRulesAsTheLogo` (fake bytes, too big, missing, folders, wrong extension), `aBadBannerNeverTakesTheLogoWithIt` |
+| `/banner` serves the image with nosniff, only on GET, 404 when none is set, and never carries the play address | `LandingServerTest.theBannerIsServedAsAnImageWithTheSecurityHeadersAndNeverCarriesTheAddress`; `/banner` is also in the list of WelcomeWagon's own paths a forward can't take |
+| With a banner: alt text is the server name, the h1 stays but is hidden, one picture only | `aBannerSitsAboveThePageAndTheNameStaysForScreenReaders` |
+| Reading order is name, Join, First time in, The map, sign-out; sections are labelled; the stylesheet is the one the CSP allows | same test |
+| Without a banner the page keeps the logo and a visible h1 | `withoutABannerThePageKeepsTheLogoAndAVisibleHeading` |
+| One box in the grid isn't squeezed to half width, and no box means no grid | `aLoneBoxInTheGridIsNotSqueezedIntoHalfAColumn` |
+| The play address is still in no answer to a browser that isn't signed in | the 0.4.0 tests, now also covering a page with a banner |
+
+Checked by hand in headless Chromium, not by a test: no horizontal scroll at 320 px, 44 px tall buttons, visible keyboard focus. Screenshots at 320, 390 and 1280 px.
+
+**Gaps skipped:** contrast is not re-measured by a test. The colors are the 0.6.1 ones, which passed WCAG 2.2 AA; `--muted` on `--bg` is 7:1 or better in both modes. 200% zoom was checked only by the 320 px width, which is the same layout.
+
 ## 2026-11-14, for 0.5.0 (switches, a path, links and tickets)
 
 | Promise | Covered by |

@@ -20,22 +20,27 @@ import java.util.regex.Pattern;
  *
  * <p>The play address is only ever put in the page of a signed-in browser (see {@link Html#welcome}).
  */
-public record PageSettings(String title, byte[] logo, String logoType, String playAddress, List<Step> steps, String mapUrl, List<String> problems, String base) {
+public record PageSettings(String title, byte[] logo, String logoType, String playAddress, List<Step> steps, String mapUrl, List<String> problems, String base,
+                           byte[] banner, String bannerType) {
     public record Step(String title, String text) {}
 
     public PageSettings(String title, byte[] logo, String logoType, String playAddress, List<Step> steps, String mapUrl, List<String> problems) {
-        this(title, logo, logoType, playAddress, steps, mapUrl, problems, "");
+        this(title, logo, logoType, playAddress, steps, mapUrl, problems, "", null, null);
+    }
+
+    public PageSettings(String title, byte[] logo, String logoType, String playAddress, List<Step> steps, String mapUrl, List<String> problems, String base) {
+        this(title, logo, logoType, playAddress, steps, mapUrl, problems, base, null, null);
     }
 
     /** The same page, served under a path such as "/join" ("" for the root). Set from landing.public-url. */
-    public PageSettings withBase(String b) { return new PageSettings(title, logo, logoType, playAddress, steps, mapUrl, problems, b); }
+    public PageSettings withBase(String b) { return new PageSettings(title, logo, logoType, playAddress, steps, mapUrl, problems, b, banner, bannerType); }
 
     static final int MAX_LOGO_BYTES = 512 * 1024;
     static final int MAX_STEPS = 8;
-    private static final Set<String> KEYS = Set.of("title", "logo", "play-address", "steps", "map-address");
+    private static final Set<String> KEYS = Set.of("title", "logo", "banner", "play-address", "steps", "map-address");
     private static final Pattern ADDRESS = Pattern.compile("[A-Za-z0-9.-]{1,253}(:[0-9]{1,5})?");
     private static final Pattern MAP = Pattern.compile("https://[a-z0-9.-]{1,253}(:[0-9]{1,5})?");
-    private static final Pattern LOGO_NAME = Pattern.compile("[A-Za-z0-9_.-]{1,64}\\.(png|webp)");
+    private static final Pattern IMAGE_NAME = Pattern.compile("[A-Za-z0-9_.-]{1,64}\\.(png|webp)");
 
     public static PageSettings none() { return new PageSettings("", null, null, "", List.of(), "", List.of()); }
 
@@ -48,29 +53,8 @@ public record PageSettings(String title, byte[] logo, String logoType, String pl
         String title = page.getString("title", "").strip();
         if (title.length() > 60) { problems.add("page.title is longer than 60 characters, so the page uses \"Join the server\"."); title = ""; }
 
-        byte[] logo = null;
-        String logoType = null;
-        String logoName = page.getString("logo", "").strip();
-        if (!logoName.isEmpty()) {
-            if (!LOGO_NAME.matcher(logoName).matches()) {
-                problems.add("page.logo is \"" + logoName + "\". It must be the name of a .png or .webp file in plugins/WelcomeWagon/, with no folders, so the page shows no logo.");
-            } else {
-                try {
-                    Path file = dataFolder.resolve(logoName);
-                    long size = Files.size(file);
-                    if (size > MAX_LOGO_BYTES) {
-                        problems.add("page.logo is " + (size / 1024) + " KB. Use one of at most 512 KB, so the page loads fast. No logo for now.");
-                    } else {
-                        byte[] bytes = Files.readAllBytes(file);
-                        logoType = typeOf(bytes);
-                        if (logoType == null) problems.add("page.logo isn't a PNG or WebP image, so the page shows no logo.");
-                        else logo = bytes;
-                    }
-                } catch (IOException e) {
-                    problems.add("page.logo \"" + logoName + "\" couldn't be read from plugins/WelcomeWagon/, so the page shows no logo.");
-                }
-            }
-        }
+        Image logoImage = image(page, "logo", "logo", dataFolder, problems);
+        Image bannerImage = image(page, "banner", "banner", dataFolder, problems);
 
         String address = page.getString("play-address", "").strip();
         if (!address.isEmpty() && !ADDRESS.matcher(address).matches()) {
@@ -95,7 +79,42 @@ public record PageSettings(String title, byte[] logo, String logoType, String pl
             problems.add("page.map-address \"" + map + "\" isn't an https:// address with only a host name and an optional :port, so the page has no map button.");
             map = "";
         }
-        return new PageSettings(title, logo, logoType, address, List.copyOf(steps), map, List.copyOf(problems));
+        return new PageSettings(title, logoImage.bytes(), logoImage.type(), address, List.copyOf(steps), map, List.copyOf(problems), "", bannerImage.bytes(), bannerImage.type());
+    }
+
+    private record Image(byte[] bytes, String type) {}
+
+    /**
+     * An optional picture named in {@code page.<key>}: a PNG or WebP in the plugin's own folder, at most 512 KB, checked by
+     * its own bytes. Anything wrong leaves the picture out and adds a console line that says what to change.
+     */
+    private static Image image(ConfigurationSection page, String key, String what, Path dataFolder, List<String> problems) {
+        Image none = new Image(null, null);
+        String name = page.getString(key, "").strip();
+        if (name.isEmpty()) return none;
+        String setting = "page." + key;
+        if (!IMAGE_NAME.matcher(name).matches()) {
+            problems.add(setting + " is \"" + name + "\". It must be the name of a .png or .webp file in plugins/WelcomeWagon/, with no folders, so the page shows no " + what + ".");
+            return none;
+        }
+        try {
+            Path file = dataFolder.resolve(name);
+            long size = Files.size(file);
+            if (size > MAX_LOGO_BYTES) {
+                problems.add(setting + " is " + (size / 1024) + " KB. Use one of at most 512 KB, so the page loads fast. No " + what + " for now.");
+                return none;
+            }
+            byte[] bytes = Files.readAllBytes(file);
+            String type = typeOf(bytes);
+            if (type == null) {
+                problems.add(setting + " isn't a PNG or WebP image, so the page shows no " + what + ".");
+                return none;
+            }
+            return new Image(bytes, type);
+        } catch (IOException e) {
+            problems.add(setting + " \"" + name + "\" couldn't be read from plugins/WelcomeWagon/, so the page shows no " + what + ".");
+            return none;
+        }
     }
 
     /** "image/png" or "image/webp" from the file's own first bytes, never its name. Null for anything else. */

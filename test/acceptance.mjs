@@ -29,7 +29,7 @@ const LIBS = path.join(ROOT, 'build/libs')
 const JAR = readdirSync(LIBS).filter(f => /^WelcomeWagon-[\d.]+\.jar$/.test(f))
 if (JAR.length !== 1) throw new Error('Run ./gradlew clean build first: expected one WelcomeWagon jar in build/libs')
 
-const PORT = 25617, WEB = 25691, PUBLIC = 'https://play.example.test'
+const PORT = Number(process.env.WW_TEST_PORT ?? 25617), WEB = Number(process.env.WW_TEST_WEB ?? 25691), PUBLIC = 'https://play.example.test'
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const jar = re => { const f = readdirSync(JARS).find(n => re.test(n)); if (!f) throw new Error('No jar matching ' + re); return path.join(JARS, f) }
 const strip = l => l.replace(/^\[[\d:]+ \w+\]: /, '').replace(/^\[[\d:]+\] \[[^\]]+\/\w+\]: /, '')
@@ -77,6 +77,8 @@ function welcomewagonConfig({ publicUrl = PUBLIC } = {}) {
   for (const [a, b] of [['enabled: false', 'enabled: true'], ['port: 25680', 'port: ' + WEB], ['public-url: ""', 'public-url: "' + publicUrl + '"'],
     // Every test browser comes from 127.0.0.1, and each invite now takes two posts, so allow the most the ceiling lets.
     ['per-ip-per-10-minutes: 10', 'per-ip-per-10-minutes: 20'],
+    // The banner (0.7.0): a real 1 x 1 PNG, written below, so the page draws it.
+    ['  banner: ""', '  banner: "banner.png"'],
     // The lobby (0.3.0): the main world at a spot away from its spawn, with one chat line for first-timers.
     ['  world: ""', '  world: world\n  spawn: {x: 40.5, y: -60, z: 40.5, yaw: 0, pitch: 0}'], ['  chat: []', '  chat: ["First time here: welcome."]']]) {
     if (!t.includes(a)) throw new Error('The default config no longer has: ' + a)
@@ -84,6 +86,7 @@ function welcomewagonConfig({ publicUrl = PUBLIC } = {}) {
     t = a === 'enabled: false' ? t.replaceAll(a, b) : t.replace(a, b)
   }
   writeFileSync(path.join(dir, 'plugins/WelcomeWagon/config.yml'), t)
+  writeFileSync(path.join(dir, 'plugins/WelcomeWagon/banner.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAwS2OUAAAAABJRU5ErkJggg==', 'base64'))
 }
 
 const log = []
@@ -262,7 +265,7 @@ try {
     asked.status === 200 && /This invite is for <strong>Alex<\/strong>/.test(asked.body) && await cannotJoin('Alex'), String(asked.status))
   const alexBrowser = new Browser()
   const ok = await alexBrowser.redeem(code.toLowerCase().replace(/(...)/, '$1-'))
-  check('after "Yes, that\'s me", Alex is in and the browser shows the welcome', ok.status === 303 && /Welcome, <strong>Alex<\/strong>/.test((await alexBrowser.req('/')).body), String(ok.status))
+  check('after "Yes, that\'s me", Alex is in and the browser shows the welcome', ok.status === 303 && /Welcome, Alex\./.test((await alexBrowser.req('/')).body), String(ok.status))
   await alexBrowser.signOut() // the session checks below count only the sessions they make
   await sleep(2500)
   const groups = (await ask('lp user Alex parent info', 1500)).join(' ')
@@ -300,7 +303,12 @@ try {
   const si = await br.signIn(link[0])
   const cookie = si.headers.getSetCookie().find(c => c.startsWith('welcomewagon_session='))
   check('the link signs the browser in with a strict cookie', si.status === 303 && /HttpOnly/.test(cookie) && /Secure/.test(cookie) && /SameSite=Strict/.test(cookie), cookie)
-  check('the browser shows who it is', /Welcome, <strong>Alex<\/strong>/.test((await br.req('/')).body))
+  check('the browser shows who it is', /Welcome, Alex\./.test((await br.req('/')).body))
+  {
+    const w = (await br.req('/')).body, img = await br.req('/banner')
+    check('the welcome view draws the banner, with the name for screen readers', /<img class="hero" src="\/banner" alt="[^"]+">/.test(w) && /<h1 class="vh">/.test(w))
+    check('/banner serves the PNG', img.status === 200 && img.headers.get('content-type') === 'image/png' && img.headers.get('x-content-type-options') === 'nosniff')
+  }
   const files = sessionFiles()
   const sf = readSession(path.join(sessionDir, files[0]))
   const fmode = (statSync(path.join(sessionDir, files[0])).mode & 0o777).toString(8)
@@ -347,7 +355,7 @@ try {
   await waitFor(/Removed Alex from the whitelist|Ended \d+ browser session/, 5000, from)
   const after = sessionFiles().map(f => readSession(path.join(sessionDir, f))).filter(s => s.name === 'Alex').length
   check('removing Alex from the whitelist ends their sessions before the command finishes', before >= 2 && after === 0, `${before} -> ${after} for Alex`)
-  check('their browser is signed out', !/Welcome, <strong>/.test((await br.req('/')).body))
+  check('their browser is signed out', !/Welcome, /.test((await br.req('/')).body))
   check('Sam\'s session is untouched', existsSync(idle.file))
 
   // The commands from the other side.

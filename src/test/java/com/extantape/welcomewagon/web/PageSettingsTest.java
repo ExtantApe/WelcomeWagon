@@ -57,6 +57,33 @@ class PageSettingsTest {
         assertNull(read("page: {logo: big.png}").logo());
     }
 
+    @Test void aBannerFollowsTheSameRulesAsTheLogo() throws Exception {
+        Files.write(dir.resolve("banner.png"), PNG);
+        Files.write(dir.resolve("banner.webp"), WEBP);
+        Files.write(dir.resolve("fake.png"), "<svg onload=alert(1)>".getBytes());
+        byte[] big = new byte[PageSettings.MAX_LOGO_BYTES + 1];
+        System.arraycopy(PNG, 0, big, 0, PNG.length);
+        Files.write(dir.resolve("big.png"), big);
+        assertEquals("image/png", read("page: {banner: banner.png}").bannerType());
+        assertEquals("image/webp", read("page: {banner: banner.webp}").bannerType());
+        assertNull(read("page: {title: x}").banner(), "empty means no banner");
+        assertEquals(java.util.List.of(), read("page: {banner: ''}").problems());
+        for (String bad : new String[] {"fake.png", "big.png", "missing.png", "../secret.png", "/etc/passwd.png", "sub/b.png", "banner.svg", "banner.png.exe"}) {
+            var p = read("page: {banner: '" + bad + "'}");
+            assertNull(p.banner(), bad);
+            assertEquals(1, p.problems().size(), bad);
+            assertTrue(p.problems().getFirst().startsWith("page.banner"), p.problems().getFirst());
+            assertTrue(p.problems().getFirst().toLowerCase().contains("no banner"), p.problems().getFirst());
+        }
+    }
+
+    @Test void aBadBannerNeverTakesTheLogoWithIt() throws Exception {
+        Files.write(dir.resolve("logo.png"), PNG);
+        var p = read("page: {logo: logo.png, banner: nope.png}");
+        assertNotNull(p.logo());
+        assertNull(p.banner());
+    }
+
     @Test void thePlayAddressMustLookLikeOne() {
         assertEquals("play.example.test", read("page: {play-address: play.example.test}").playAddress());
         assertEquals("play.example.test:25566", read("page: {play-address: 'play.example.test:25566'}").playAddress());
