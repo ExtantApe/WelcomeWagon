@@ -78,7 +78,7 @@ public final class Html {
      */
     static final String CODE_SCRIPT =
             "(function(){var t=location.hash.slice(1),c=document.getElementById('code');if(t&&c&&/^[A-Za-z0-9 -]{1,16}$/.test(t)){c.value=t;history.replaceState(null,'',location.pathname);}})();";
-    static final String CSP = "default-src 'none'; style-src '" + sha256(CSS) + "'; script-src '" + sha256(SCRIPT) + "' '" + sha256(COPY_SCRIPT) + "' '" + sha256(CODE_SCRIPT)
+    static final String CSP = "default-src 'none'; style-src 'self' '" + sha256(CSS) + "'; script-src '" + sha256(SCRIPT) + "' '" + sha256(COPY_SCRIPT) + "' '" + sha256(CODE_SCRIPT)
             + "'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
 
     /** The CSP for the welcome view: as {@link #CSP}, but its map button may post on to the map's own address. */
@@ -101,12 +101,16 @@ public final class Html {
         return b.toString();
     }
 
-    static String page(String title, String body, boolean withScript) {
-        return page(title, body, withScript ? SCRIPT : null);
+    static String page(PageSettings p, String title, String body, boolean withScript) {
+        return page(p, title, body, withScript ? SCRIPT : null);
     }
 
     static String page(String title, String body, String script) {
         return page(title, body, script, null, false);
+    }
+
+    static String page(PageSettings p, String title, String body, String script) {
+        return page(title, body, script, p, false);
     }
 
     /**
@@ -115,13 +119,15 @@ public final class Html {
      */
     static String page(String title, String body, String script, PageSettings p, boolean wide) {
         boolean banner = p != null && p.banner() != null;
+        // The server's theme, when it has one that passed its checks, is a stylesheet after WelcomeWagon's own.
+        String theme = p != null && p.theme() != null ? "<link rel=\"stylesheet\" href=\"" + p.base() + "/theme.css\">" : "";
         String cls = (banner ? "b" : "") + (wide ? (banner ? " w" : "w") : "");
         String top = banner ? "<div class=\"top\"><img class=\"hero\" src=\"" + p.base() + "/banner\" alt=\"" + esc(p.heading()) + "\">"
                 + "<div class=\"rim\" aria-hidden=\"true\"></div></div>" : "";
         return "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
                 + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
                 + "<meta name=\"referrer\" content=\"no-referrer\"><title>" + esc(title) + "</title>"
-                + "<style>" + CSS + "</style></head><body" + (cls.isEmpty() ? "" : " class=\"" + cls + "\"") + ">" + top + "<main>" + body + "</main>"
+                + "<style>" + CSS + "</style>" + theme + "</head><body" + (cls.isEmpty() ? "" : " class=\"" + cls + "\"") + ">" + top + "<main>" + body + "</main>"
                 + (script != null ? "<script>" + script + "</script>" : "") + "</body></html>";
     }
 
@@ -217,7 +223,7 @@ public final class Html {
         b.append(message(msg, msgKind));
         if (!open) {
             b.append("<p>Sign-in isn't open on this server right now.</p>");
-            return page("Sign in", b.toString(), false);
+            return page(p, "Sign in", b.toString(), false);
         }
         b.append("<form method=\"post\" action=\"").append(p.base()).append("/signin\">")
          .append("<input type=\"hidden\" name=\"csrf\" value=\"").append(esc(csrf)).append("\">")
@@ -225,11 +231,11 @@ public final class Html {
          .append("<input id=\"link\" name=\"link\" required maxlength=\"300\" autocomplete=\"off\" spellcheck=\"false\" aria-describedby=\"link-hint\">")
          .append("<p id=\"link-hint\" class=\"hint\">Filled in for you when you click the link in game. If it's empty, paste the link here.</p>")
          .append("<button type=\"submit\">Sign in</button></form>");
-        return page("Sign in", b.toString(), true);
+        return page(p, "Sign in", b.toString(), true);
     }
 
-    static String plain(String title, String text) {
-        return page(title, "<h1>" + esc(title) + "</h1>" + message(text, ""), false);
+    static String plain(PageSettings p, String title, String text) {
+        return page(p, title, "<h1>" + esc(title) + "</h1>" + message(text, ""), false);
     }
 
     static String sha256(String s) {
