@@ -29,7 +29,7 @@ public final class Html {
             a{color:var(--btn)}
             .logo{display:block;max-width:12rem;max-height:8rem;margin:0 auto 1.5rem}
             .addr{display:flex;flex-wrap:wrap;align-items:center;gap:.75rem;margin:0 0 1.5rem}
-            .addr code{font:600 1.5rem/1.3 ui-monospace,monospace;padding:.5rem .75rem;border:2px solid var(--line);border-radius:.4rem;word-break:break-all}
+            .addr code{font:600 1.5rem/1.3 ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;padding:.5rem .75rem;border:2px solid var(--line);border-radius:.4rem;word-break:break-all}
             .addr button{margin:0}
             ol{padding-left:1.25rem}
             li{margin:0 0 1rem}
